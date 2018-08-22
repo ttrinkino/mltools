@@ -11,22 +11,9 @@ def accuracy_score(y_true, y_pred):
     return np.mean(y_true == y_pred)
 
 
-def init_weights(M1, M2):
-    W = np.random.randn(M1, M2) / np.sqrt(M1 + M2)
-    return W.astype(np.float32)
-
-
-def init_bias(M):
-    b = np.zeros(M)
-    return b.astype(np.float32)
-
-
 def add_label(df):  # clip values and normalize/standardize for regression
     df['maxreturn'] = (df.exit_price - df.entry_price) / df.zatr
-    # df['label'] = (df.maxreturn > 0.05).astype(int)
-    t0 = df.maxreturn.quantile(0.33)
-    t1 = df.maxreturn.quantile(0.67)
-    df['label'] = (df.maxreturn > t0).astype(int) + (df.maxreturn > t1).astype(int)
+    df['label'] = (df.maxreturn > 0.).astype(int)
     print(df.maxreturn.describe())
     print('Percentage of Target Trades', len(df[df.label == 2]) / len(df))
 
@@ -43,6 +30,7 @@ def readFile(filename, sample, start_date=None):
     if start_date:
         df = df[pd.to_datetime(df.entry_time) > pd.to_datetime(start_date)]
 
+    # specific to input date - formatting column names
     cols = list()
     for i in df.columns:
         if i[:14] == 'entry_collect.':
@@ -116,6 +104,7 @@ def separate_balance_data(df, split_data, balance=True, downsample=False, save_t
         s = int(len(df) * split_data)
         df, df_test = df[:s], df[s:]
 
+    # balance classes with over/under sample
     if balance:
         sizes = list()
         class_dict = dict()
@@ -171,6 +160,8 @@ def separate_balance_data(df, split_data, balance=True, downsample=False, save_t
 
 
 def get_features(df, save_feats=True):
+
+    # save parameters for multiple different timeseries
     data = dict()
     data['time_0'] = {'scale': 'normalize', 'time_steps': 14, 'clip_inputs': True, 'reverse': False}
     data['time_1'] = {'scale': 'normalize', 'time_steps': 20, 'clip_inputs': False, 'reverse': True}
@@ -183,6 +174,7 @@ def get_features(df, save_feats=True):
     data['time_3']['feats'] = list()
     data['static_mins']['feats'] = list()
 
+    # save features corresponding to each leg of the neural network/time series
     static_feats = list(np.load('D:/data_files/staticfeatsimballong.npy'))
     for i in df.columns:
         if i[:4] == 'nyi_':
@@ -208,6 +200,7 @@ def get_features(df, save_feats=True):
         elif i in static_feats:
             data['static_mins']['feats'].append(i)
 
+    # specific to input data columns
     all_feats = ['symbol', 'label', 'entry_time', 'mtm_pl', 'zl1t']
     for k in data.keys():
         if 'time' in k:
@@ -278,6 +271,8 @@ def getData(filename, sample=None, start_date=None, split_data=0.8, null_drop=Fa
             reverse=reverse, save_norms=save_norms, load_norms=load_norms,
             filename=norm_filename
         )
+
+        # transform data from RNN format to CNN format
         if cnn_transform and ftype == 'time':
             # data['X_train_rp' + str(fname)] = cnnTransform(copy.deepcopy(data['X_train_' + str(fname)]))
             data['X_test_rp' + str(fname)] = cnnTransform(copy.deepcopy(data['X_test_' + str(fname)]))
@@ -290,6 +285,7 @@ def getData(filename, sample=None, start_date=None, split_data=0.8, null_drop=Fa
     return data
 
 
+# transform matrix of time series in T, N, D format to recurrence plots
 def cnnTransform(X):
     T = X.shape[0]
     N = X.shape[1]
@@ -305,6 +301,7 @@ def cnnTransform(X):
     return Z
 
 
+# transform time series to recurrence plots
 def rec_plot(ts, eps=0.001, steps=100, low_memory=False):
     if low_memory:
         d = pdist(ts[:, None])
@@ -320,6 +317,7 @@ def rec_plot(ts, eps=0.001, steps=100, low_memory=False):
     return Z
 
 
+# transform data to T, N, D format from N, D
 def rnnTransform(X, time_steps, n_features, reverse=False):
     N = X.shape[0]
     T = int(time_steps)
@@ -343,6 +341,7 @@ def rnnTransform(X, time_steps, n_features, reverse=False):
     return data  # shape T, N, D
 
 
+# process data and normalize
 def prep_matrix(df, df_test, features, feature_type='static', scale='normalize',
                 clip_inputs=True, fill_nans=True, time_steps=None, n_features=None,
                 reverse=False, load_norms=False, save_norms=False, filename=None):
@@ -366,6 +365,7 @@ def prep_matrix(df, df_test, features, feature_type='static', scale='normalize',
         X = np.array(X).astype(np.float32)
         X_test = np.array(X_test).astype(np.float32)
 
+    # handle outliers with 1.5 * interquartile range outside of 25th and 75th percentiles
     if clip_inputs:
         if load_norms:
             minb = data['minb_norm']
@@ -391,6 +391,7 @@ def prep_matrix(df, df_test, features, feature_type='static', scale='normalize',
         data['minb_norm'] = minb
         data['maxb_norm'] = maxb
 
+    # forward fill nan values for time series
     if fill_nans:
         if feature_type == 'time':  # assumes features are already normalized
             if load_norms:
@@ -451,6 +452,8 @@ def prep_matrix(df, df_test, features, feature_type='static', scale='normalize',
                 zero_check = np.argwhere(zero_check == 0)
             X = np.delete(X, zero_check, axis=2)
             X_test = np.delete(X_test, zero_check, axis=2)
+
+        # fill norms for static variables
         else:
             if load_norms:
                 medians = data['nanmedians_norm']
@@ -481,6 +484,7 @@ def prep_matrix(df, df_test, features, feature_type='static', scale='normalize',
         data['nanmedians_norm'] = medians
         data['zero_check_norm'] = zero_check
 
+    # normalize data
     if scale:
         print('Scaling Data', dt.now())
 
@@ -595,52 +599,7 @@ def get_ml_type(df, label):
         return 'reg'
 
 
-def stagesData(final=False):
-    stages = dict()
-    stages['stage1'] = dict()
-    stages['stage2'] = dict()
-    stages['stage3'] = dict()
-    stages['stage4'] = dict()
-    stages['merge_best'] = 3
-    stages['stage1']['num_feats'] = 2500
-    stages['stage2']['num_feats'] = 1000
-    stages['stage3']['num_feats'] = 500
-    stages['stage4']['num_feats'] = 250
-    stages['stage1']['batch_sz'] = 50
-    stages['stage2']['batch_sz'] = 100
-    stages['stage1']['num_rounds'] = 50
-    stages['stage2']['num_rounds'] = 100
-    stages['stage3']['num_rounds'] = 200
-    stages['stage4']['num_rounds'] = 400
-    stages['stage1']['max_depth'] = 1
-    stages['stage2']['max_depth'] = 2
-    stages['stage3']['max_depth'] = 4
-    stages['stage4']['max_depth'] = 6
-    stages['stage1']['num_leaves'] = 2
-    stages['stage2']['num_leaves'] = 4
-    stages['stage3']['num_leaves'] = 6
-    stages['stage4']['num_leaves'] = 8
-    stages['stage1']['learning_rate'] = 0.08
-    stages['stage2']['learning_rate'] = 0.04
-    stages['stage3']['learning_rate'] = 0.02
-    stages['stage4']['learning_rate'] = 0.01
-    stages['stage1']['filter_th'] = 0.6
-    stages['stage2']['filter_th'] = 0.7
-    stages['stage3']['filter_th'] = 0.8
-    stages['stage4']['filter_th'] = 0.9
-
-    if final:
-        stages['stage1']['filter_th'] = 0.8
-        stages['stage2']['filter_th'] = 0.85
-        stages['stage3']['filter_th'] = 0.9
-        stages['stage4']['filter_th'] = 0.95
-        stages['stage4']['num_feats'] = 100
-        stages['stage4']['max_depth'] = 8
-        stages['stage4']['num_leaves'] = 16
-
-    return stages
-
-
+# parameter data for GA - gradient boosted trees and neural net
 def paramData(nn_params=False):
     if not nn_params:
         param_ranges = dict(range_params=dict(), feat_params=dict(), fixed_params=dict())
@@ -694,3 +653,4 @@ def paramData(nn_params=False):
         param_ranges['final_layer_params']['final_neurons'] = list(range(10, 110, 10))
 
     return param_ranges
+

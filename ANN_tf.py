@@ -12,6 +12,7 @@ import os
 
 
 def main():
+    # load data into dictionary
     data = getData(
         'D:/data_files/Imbal_nntrain_long.feather', load_file=True
     )
@@ -60,12 +61,14 @@ def main():
     # X_test_rptime1 = data['X_test_rptime_1']
     # X_test_rptime2 = data['X_test_rptime_2']
     # X_test_rptime3 = data['X_test_rptime_3']
-    #
+
+    # load tensorflow graph and weights/variables to make predictions
     # y_pred = load_predict(
     #     save_file, X_test_static, X_test_time0, X_test_time1, X_test_time2, X_test_time3,
     #     X_test_rptime0, X_test_rptime1, X_test_rptime2, X_test_rptime3
     # )
 
+    # change logits to probabilities
     # probs = 1 / (1 + np.exp(-y_pred))
     # probs = probs[:, 1] / np.sum(probs, axis=1)
     # y_pred = np.argmax(y_pred, axis=1)
@@ -132,6 +135,7 @@ class ANN:
             y_temp[np.arange(len(y_test)), y_test] = 1
             y_test = y_temp
 
+        # data from 4 different timeseries
         X_train_time0, X_test_time0 = data['X_train_time_0'], data['X_test_time_0']
         T, N, D_time0 = X_train_time0.shape
         X_time0 = tf.placeholder(tf.float32, shape=(T, None, D_time0), name='X_time0')
@@ -151,6 +155,7 @@ class ANN:
         assert N3 == N
         X_time3 = tf.placeholder(tf.float32, shape=(T3, None, D_time3), name='X_time3')
 
+        # placeholders representing recurrence plots for each timeseries
         X_rptime0 = tf.placeholder(tf.float32, shape=(None, T, T, D_time0), name='X_rptime0')
         X_rptime1 = tf.placeholder(tf.float32, shape=(None, T1, T1, D_time1), name='X_rptime1')
         X_rptime2 = tf.placeholder(tf.float32, shape=(None, T2, T2, D_time2), name='X_rptime2')
@@ -160,6 +165,7 @@ class ANN:
         X_test_rptime2 = data['X_test_rptime_2']
         X_test_rptime3 = data['X_test_rptime_3']
 
+        # static features
         X_train_static, X_test_static = data['X_train_static_mins'], data['X_test_static_mins']
         N_static, D_static = X_train_static.shape
         assert N_static == N
@@ -183,6 +189,7 @@ class ANN:
             'updates_collections': None
         }
 
+        # fully connected layers for static features
         static_inputs = X_static
         with tf.name_scope('fc_layers'):
             if self.fc_keep_probs:
@@ -199,6 +206,7 @@ class ANN:
                         normalizer_fn=batch_norm, normalizer_params=bn_params
                     )
 
+        # RNN layers for each timeseries
         with tf.variable_scope('rnn0_vars', initializer=he_init):
             with tf.name_scope('rnn0_layers'):
                 if rnn_cell_type == LayerNormBasicLSTMCell:
@@ -299,6 +307,7 @@ class ANN:
                 )
             time_inputs3 = outputs3[-1]
 
+        # CNN legs representing timeseries as recurrence plots
         rptime_inputs0 = X_rptime0
         with tf.name_scope('cnn0_layers'):
             for layer_size in self.cnn0_filter_sizes:
@@ -375,12 +384,14 @@ class ANN:
                 rptime_inputs3, [-1, dim]
             )
 
+        # combine all legs of neural network for final layers
         inputs = tf.concat(
             [static_inputs, time_inputs0, time_inputs1, time_inputs2, time_inputs3,
              rptime_inputs0, rptime_inputs1, rptime_inputs2, rptime_inputs3], axis=1
         )
         print('Final Input Shape', inputs.shape)
 
+        # final layers
         with tf.name_scope('final_layers'):
             if self.final_keep_probs:
                 for fc_size, keep_p in zip(self.final_layer_sizes, self.final_keep_probs[:-1]):
@@ -404,6 +415,8 @@ class ANN:
                     inputs, K, weights_initializer=he_init, activation_fn=None,
                     normalizer_fn=batch_norm, normalizer_params=bn_params
                 )
+
+        # can change weights for binary classification to achieve better recall or precision
         with tf.name_scope('cost'):
             if K == 2:
                 train_cost = tf.reduce_mean(
@@ -433,6 +446,8 @@ class ANN:
                         labels=y
                     )
                 )
+
+        # track train and test accuracies for tensorboard
         tf.summary.scalar('train_cost', train_cost)
         tf.summary.scalar('test_cost', test_cost, collections=['test_summaries'])
 
@@ -510,6 +525,8 @@ class ANN:
                     ), tf.float32
                     )
                 )
+
+        # track train and test accuracies for tensorboard
         tf.summary.scalar('train_accuracy', train_accuracy)
         tf.summary.scalar('accuracy', accuracy, collections=['test_summaries'])
 
@@ -551,6 +568,8 @@ class ANN:
                 X_train_time1 = X_train_time1[:, idxs]
                 X_train_time2 = X_train_time2[:, idxs]
                 X_train_time3 = X_train_time3[:, idxs]
+
+                # can't load data in due to memory
                 # X_train_rptime0 = X_train_rptime0[:, idxs]
                 # X_train_rptime1 = X_train_rptime1[:, idxs]
                 # X_train_rptime2 = X_train_rptime2[:, idxs]
@@ -564,6 +583,8 @@ class ANN:
                     X_batch_time1 = X_train_time1[:, batch * batch_sz:(batch + 1) * batch_sz]
                     X_batch_time2 = X_train_time2[:, batch * batch_sz:(batch + 1) * batch_sz]
                     X_batch_time3 = X_train_time3[:, batch * batch_sz:(batch + 1) * batch_sz]
+
+                    # transform batch data to cnn formats due to memory restrictions
                     X_batch_rptime0 = cnnTransform(X_batch_time0)
                     X_batch_rptime1 = cnnTransform(X_batch_time1)
                     X_batch_rptime2 = cnnTransform(X_batch_time2)
@@ -608,6 +629,8 @@ class ANN:
                             #     rnn2_keep_p: 1.0, rnn3_keep_p: 3.0,
                             #     train: False
                             # }
+
+                        # create batches for test costs and metrics due to memory constraints
                         testc = list()
                         acc = list()
                         test_prec = list()
@@ -693,6 +716,7 @@ class ANN:
                         f1s.append(f1)
                         y_prob = np.concatenate(y_prob)
 
+                        # lower learning rate if test costs increase
                         if adapt_lr and epoch > 0:
                             if testc < min_cost:
                                 min_cost = testc
@@ -814,6 +838,7 @@ class ANN:
             return y_pred
 
 
+# load tensorflow graph and variables/weights to make prediction
 def load_predict(filename, X_test_static, X_test_time0, X_test_time1, X_test_time2, X_test_time3,
                        X_test_rptime0, X_test_rptime1, X_test_rptime2, X_test_rptime3, probs=False):
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'

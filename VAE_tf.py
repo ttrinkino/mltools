@@ -17,7 +17,8 @@ def main():
     vae = VAE(
         encoder_layer_sizes=[100, 50, 2],
         rnn_encoder_layer_sizes=[40, 20],
-        encoder_dropout=0.8
+        encoder_dropout=0.8,
+        rnn_encoder_dropout=0.8
     )
 
     vae.fit(
@@ -32,6 +33,7 @@ def main():
     print(X_sample.shape, X_test_sample.shape)
 
 
+# variational autoencoder with static and timeseries features accepted
 class VAE:
     def __init__(self, encoder_layer_sizes, decoder_layer_sizes=None,
                  encoder_dropout=1.0, decoder_dropout=None,
@@ -40,6 +42,7 @@ class VAE:
                  save_file=None, tensorboard=None):
 
         self.encoder_layer_sizes = encoder_layer_sizes
+        # copy encoder layer sizes to decoder
         if decoder_layer_sizes is None:
             self.decoder_layer_sizes = list(reversed(encoder_layer_sizes[:-1]))
         else:
@@ -56,6 +59,7 @@ class VAE:
             self.decoder_dropout = [decoder_dropout for _ in range(len(self.decoder_layer_sizes) + 1)]
 
         self.rnn_encoder_layer_sizes = rnn_encoder_layer_sizes
+        # copy rnn encoder layer sizes to rnn decoder
         if rnn_encoder_layer_sizes is not None:
             if rnn_decoder_layer_sizes is None:
                 self.rnn_decoder_layer_sizes = list(reversed(rnn_encoder_layer_sizes[:-1]))
@@ -79,9 +83,12 @@ class VAE:
 
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 
+        # static features
         X = data['X_train_static_mins']
         N, D = X.shape
         self.X = tf.placeholder(tf.float32, shape=(None, D), name='X')
+
+        # timeseries features
         X_time = data['X_train_time_0']
         T1, N1, D1 = X_time.shape
         assert N == N1
