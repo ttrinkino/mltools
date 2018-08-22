@@ -1,1 +1,3 @@
 # mltools
+
+General templates for deep learning tools I use to build trading algorithms from market data. Utils file gets data from disk and normalizes/standardizes and groups features. Variational Autoencoder is used to oversample classes in problems with a class imbalance. Genetic algorithm is used to tune the parameters of the neural network. The neural network uses nine different legs before combining all of them into a final series of fully connected layers, there are four different timeseries, each with an LSTM/GRU leg and a CNN leg after transforming the data to a recurrence plot. There is a final leg of the neural network for static variables as well. 
